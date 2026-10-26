@@ -207,10 +207,40 @@ EOF
 
 rm -f /etc/X11/xorg.conf.d/20-nouveau.conf /etc/X11/xorg.conf.d/20-gpu-driver.conf
 
+# Helper function to blacklist 'nouveau' in modprobe, GRUB, and initramfs when using proprietary NVIDIA
+blacklist_nouveau_for_nvidia() {
+  rm -f /etc/modules-load.d/nouveau.conf
+  cat << 'EOF' > /etc/modprobe.d/blacklist-nouveau.conf
+blacklist nouveau
+options nouveau modeset=0
+EOF
+  if [ -f /etc/default/grub ]; then
+    if ! grep -q "rd.driver.blacklist=nouveau" /etc/default/grub; then
+      sed -i 's/GRUB_CMDLINE_LINUX="/GRUB_CMDLINE_LINUX="rd.driver.blacklist=nouveau modprobe.blacklist=nouveau nvidia-drm.modeset=1 /' /etc/default/grub
+    fi
+    grub2-mkconfig -o /boot/grub2/grub.cfg 2>/dev/null || true
+    [ -f /boot/efi/EFI/rocky/grub.cfg ] && grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg 2>/dev/null || true
+  fi
+  echo "    -> Building NVIDIA kernel modules (akmods/dkms) and updating initramfs..."
+  akmods --force 2>/dev/null || dkms autoinstall 2>/dev/null || true
+  dracut --force
+}
+
+# Helper function to unblacklist 'nouveau' in modprobe, GRUB, and initramfs when using open-source drivers
+unblacklist_nouveau() {
+  rm -f /etc/modprobe.d/*blacklist*nouveau*.conf
+  if [ -f /etc/default/grub ] && grep -q "nouveau" /etc/default/grub; then
+    sed -i -E 's/rd\.driver\.blacklist=nouveau ?//g; s/modprobe\.blacklist=nouveau ?//g; s/nvidia-drm\.modeset=1 ?//g' /etc/default/grub
+    grub2-mkconfig -o /boot/grub2/grub.cfg 2>/dev/null || true
+    [ -f /boot/efi/EFI/rocky/grub.cfg ] && grub2-mkconfig -o /boot/efi/EFI/rocky/grub.cfg 2>/dev/null || true
+    dracut --force
+  fi
+}
+
 case "$GPU_PROFILE" in
   nouveau)
+    unblacklist_nouveau
     dnf install -y --skip-broken xorg-x11-drv-nouveau
-    rm -f /etc/modprobe.d/*blacklist*nouveau*.conf
     echo "nouveau" > /etc/modules-load.d/nouveau.conf
     modprobe nouveau 2>/dev/null || true
     cat << 'EOF' > /etc/X11/xorg.conf.d/20-nouveau.conf
@@ -224,43 +254,46 @@ EOF
     ;;
 
   nvidia-latest)
-    dnf install -y --skip-broken kernel-devel kernel-headers gcc make dkms acpid libglvnd-devel pkgconfig
-    rm -f /etc/modules-load.d/nouveau.conf
+    dnf install -y --skip-broken "kernel-devel-matched" kernel-devel kernel-headers gcc make dkms acpid libglvnd-devel pkgconfig
     dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/cuda-rhel9.repo 2>/dev/null || true
     dnf module reset -y nvidia-driver 2>/dev/null || true
     if ! dnf module install -y nvidia-driver:latest-dkms; then
       dnf install -y --skip-broken akmod-nvidia xorg-x11-drv-nvidia xorg-x11-drv-nvidia-libs
     fi
+    blacklist_nouveau_for_nvidia
     ;;
 
   nvidia-550)
-    dnf install -y --skip-broken kernel-devel kernel-headers gcc make dkms acpid libglvnd-devel pkgconfig
-    rm -f /etc/modules-load.d/nouveau.conf
+    dnf install -y --skip-broken "kernel-devel-matched" kernel-devel kernel-headers gcc make dkms acpid libglvnd-devel pkgconfig
     dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/cuda-rhel9.repo 2>/dev/null || true
     dnf module reset -y nvidia-driver 2>/dev/null || true
     if ! dnf module install -y nvidia-driver:550-dkms; then
       dnf install -y --skip-broken akmod-nvidia xorg-x11-drv-nvidia
     fi
+    blacklist_nouveau_for_nvidia
     ;;
 
   nvidia-470)
-    dnf install -y --skip-broken kernel-devel kernel-headers gcc make dkms acpid libglvnd-devel pkgconfig
-    rm -f /etc/modules-load.d/nouveau.conf
+    dnf install -y --skip-broken "kernel-devel-matched" kernel-devel kernel-headers gcc make dkms acpid libglvnd-devel pkgconfig
     dnf module reset -y nvidia-driver 2>/dev/null || true
     dnf install -y --skip-broken akmod-nvidia-470xx xorg-x11-drv-nvidia-470xx xorg-x11-drv-nvidia-470xx-libs
+    blacklist_nouveau_for_nvidia
     ;;
 
   amd)
+    unblacklist_nouveau
     dnf install -y --skip-broken xorg-x11-drv-amdgpu xorg-x11-drv-ati
     modprobe amdgpu 2>/dev/null || true
     ;;
 
   intel)
+    unblacklist_nouveau
     dnf install -y --skip-broken xorg-x11-drv-intel intel-media-driver libva-intel-driver
     modprobe i915 2>/dev/null || true
     ;;
 
   vm)
+    unblacklist_nouveau
     dnf install -y --skip-broken xorg-x11-drv-vmware xorg-x11-drv-qxl xorg-x11-drv-vesa xorg-x11-drv-fbdev
     ;;
 esac
