@@ -153,7 +153,6 @@ dnf install -y \
   alsa-utils \
   xterm \
   xterm-resize \
-  feh \
   motif \
   libXp \
   libXpm \
@@ -162,7 +161,11 @@ dnf install -y \
   libXext \
   libXft \
   gtk2 \
-  gtk3
+  gtk3 \
+  ImageMagick
+
+# Install X11 root window background setter (xloadimage provides 'xsetbg' in EPEL 9)
+dnf install -y xloadimage || echo "    -> Info: xloadimage not found, using ImageMagick 'display' as fallback."
 
 echo "==> [5/8] Installing/Verifying X11 (Bitmap/ISO8859-1) and TrueType fonts..."
 dnf install -y \
@@ -242,12 +245,19 @@ EOF
   fi
 done
 
-# Idempotently write X11 wallpaper autoload script
+# Idempotently write X11 wallpaper autoload script (supports xsetbg, feh, or ImageMagick display)
 mkdir -p /etc/X11/xinit/xinitrc.d
 cat << 'EOF' > /etc/X11/xinit/xinitrc.d/99-sgi-wallpaper.sh
 #!/bin/sh
-if command -v feh >/dev/null 2>&1 && [ -f /usr/share/backgrounds/sgi/sgi_desktop.jpg ]; then
-  feh --bg-scale /usr/share/backgrounds/sgi/sgi_desktop.jpg &
+WALLPAPER="/usr/share/backgrounds/sgi/sgi_desktop.jpg"
+if [ -f "$WALLPAPER" ]; then
+  if command -v xsetbg >/dev/null 2>&1; then
+    xsetbg -fullscreen "$WALLPAPER" &
+  elif command -v feh >/dev/null 2>&1; then
+    feh --bg-scale "$WALLPAPER" &
+  elif command -v display >/dev/null 2>&1; then
+    display -window root -backdrop "$WALLPAPER" &
+  fi
 fi
 EOF
 chmod +x /etc/X11/xinit/xinitrc.d/99-sgi-wallpaper.sh
