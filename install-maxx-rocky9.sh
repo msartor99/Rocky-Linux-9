@@ -2,7 +2,7 @@
 # ==============================================================================
 # Post-Installation Script: X11 + SDDM + MaXX Interactive Desktop (Octane)
 # Target OS: Rocky Linux 9 (Minimal Install / Server without GUI)
-# GPU Driver: Open-source 'nouveau' (KMS / Glamor) & standard X11 drivers
+# GPU Support: Nouveau, NVIDIA Proprietary (470, 550, Latest), AMD, Intel, VM
 # Included Apps: LibreOffice, Firefox, Thunderbird, VLC, Evince (pdfview)
 # Design: Strictly Idempotent (safe to run multiple times)
 # ==============================================================================
@@ -15,10 +15,16 @@ if [ "$EUID" -ne 0 ]; then
   exit 1
 fi
 
-# 2. Ensure 'whiptail' (newt) is available (idempotent check)
-if ! command -v whiptail &> /dev/null; then
-  echo "==> Installing 'newt' (whiptail) utility for interactive configuration..."
-  dnf install -y newt
+# 2. Ensure 'whiptail' (newt) and 'lspci' (pciutils) are available for TUI & GPU detection
+if ! command -v whiptail &> /dev/null || ! command -v lspci &> /dev/null; then
+  echo "==> Installing 'newt' (whiptail) and 'pciutils' (lspci) for hardware detection..."
+  dnf install -y newt pciutils
+fi
+
+# Detect GPU hardware string for display in the interactive menu
+DETECTED_GPU=$(lspci | grep -iE "vga|3d|display" | sed -E 's/^[0-9a-fA-F:.]+ //; s/VGA compatible controller: //; s/3D controller: //' | tr '\n' ' ' | cut -c 1-68)
+if [ -z "$DETECTED_GPU" ]; then
+  DETECTED_GPU="Unknown / Virtual Display Adapter"
 fi
 
 # 3. Display Disclaimer and request operator acceptance via whiptail
@@ -27,13 +33,13 @@ if ! whiptail --backtitle "MaXX Interactive Desktop Setup - Rocky Linux 9" \
   --yes-button "Accept" --no-button "Decline" \
   --yesno "This idempotent script will configure or update this Rocky Linux 9 system:\n\n\
   1. Configure system locale and console/X11/shell keyboard layouts.\n\
-  2. Enable CRB, EPEL, and RPM Fusion Free repositories.\n\
-  3. Install Xorg server, 'nouveau' GPU driver, and SDDM display manager.\n\
-  4. Install Motif/X11 libraries, icon themes, and X11/TrueType fonts.\n\
-  5. Install desktop apps: LibreOffice, Firefox, Thunderbird, VLC, Evince.\n\
-  6. Install or verify MaXX Interactive Desktop in /opt/MaXX + apply fixes.\n\
-  7. Configure SGI splash screen (Maldives theme) and desktop wallpaper.\n\
-  8. Ensure default systemd target is 'graphical.target'.\n\n\
+  2. Select and configure GPU driver (Detected: $DETECTED_GPU).\n\
+  3. Enable CRB, EPEL, and RPM Fusion repositories.\n\
+  4. Install Xorg server, GPU drivers, and SDDM display manager.\n\
+  5. Install Motif/X11 libraries, icon themes, and X11/TrueType fonts.\n\
+  6. Install desktop apps: LibreOffice, Firefox, Thunderbird, VLC, Evince.\n\
+  7. Install or verify MaXX Interactive Desktop in /opt/MaXX + apply fixes.\n\
+  8. Configure SGI splash screen (Maldives theme) and desktop wallpaper.\n\n\
 WARNING: This script is provided 'AS IS' without warranty of any kind. Ensure you have a backup or snapshot before proceeding.\n\n\
 Do you accept these terms and wish to proceed?" 24 78; then
   clear
@@ -93,14 +99,37 @@ else
   XKB_CMD="setxkbmap -model pc105 -layout $X11_LAYOUT"
 fi
 
-# 6. If MaXX is already installed, ask operator whether to keep or reinstall
+# 6. Interactive Menu: Graphics Card (GPU) Driver Selection
+GPU_CHOICE=$(whiptail --backtitle "MaXX Interactive Desktop Setup - Rocky Linux 9" \
+  --title "Graphics Card (GPU) Driver Selection" \
+  --menu "Detected GPU: $DETECTED_GPU\n\nSelect the graphics driver to install and configure:" 19 76 7 \
+  "1" "Nouveau    - Open-Source NVIDIA driver (KMS / Glamor - Recommended)" \
+  "2" "NVIDIA Latest - Proprietary NVIDIA driver (Latest branch)" \
+  "3" "NVIDIA 550 - Proprietary NVIDIA driver (550 Production branch)" \
+  "4" "NVIDIA 470 - Proprietary NVIDIA driver (470 Legacy Kepler branch)" \
+  "5" "AMD / ATI  - Open-Source AMDGPU / Radeon driver (Mesa KMS)" \
+  "6" "Intel      - Open-Source Intel HD / Iris / Arc driver (Modesetting)" \
+  "7" "VM / VESA  - Virtual Machine (VMware / QXL / VirtIO / VESA / FBDEV)" \
+  3>&1 1>&2 2>&3) || { clear; echo "Error: GPU driver selection cancelled by operator. Exiting."; exit 1; }
+
+case "$GPU_CHOICE" in
+  1) GPU_PROFILE="nouveau";       GPU_DESC="NVIDIA Open-Source (nouveau)" ;;
+  2) GPU_PROFILE="nvidia-latest"; GPU_DESC="NVIDIA Proprietary (latest)" ;;
+  3) GPU_PROFILE="nvidia-550";    GPU_DESC="NVIDIA Proprietary (550 branch)" ;;
+  4) GPU_PROFILE="nvidia-470";    GPU_DESC="NVIDIA Proprietary (470 legacy)" ;;
+  5) GPU_PROFILE="amd";           GPU_DESC="AMD / ATI Open-Source (amdgpu/radeon)" ;;
+  6) GPU_PROFILE="intel";         GPU_DESC="Intel Open-Source (modesetting/iris)" ;;
+  7) GPU_PROFILE="vm";            GPU_DESC="Virtual Machine / Generic (vmware/qxl/vesa)" ;;
+esac
+
+# 7. If MaXX is already installed, ask operator whether to keep or reinstall
 REINSTALL_MAXX="yes"
 if [ -d "/opt/MaXX" ] && [ -f "/opt/MaXX/share/xsessions/maxx.desktop" ]; then
   if whiptail --backtitle "MaXX Interactive Desktop Setup - Rocky Linux 9" \
     --title "Existing MaXX Installation Detected" \
     --yes-button "Keep Existing" --no-button "Reinstall MaXX" \
     --yesno "MaXX Interactive Desktop is already installed in /opt/MaXX.\n\n\
-Would you like to KEEP the existing MaXX installation (faster, only updates packages/locale/keyboard/artwork/fixes) or REINSTALL it from scratch?" 13 75; then
+Would you like to KEEP the existing MaXX installation (faster, only updates packages/GPU/locale/keyboard/artwork/fixes) or REINSTALL it from scratch?" 13 75; then
     REINSTALL_MAXX="no"
   else
     REINSTALL_MAXX="yes"
@@ -109,8 +138,8 @@ fi
 
 clear
 
-# 7. Start idempotent installation and system configuration process
-echo "==> [1/8] Verifying CRB, EPEL, and RPM Fusion Free repositories..."
+# 8. Start idempotent installation and system configuration process
+echo "==> [1/8] Verifying CRB, EPEL, and RPM Fusion repositories..."
 dnf install -y dnf-plugins-core
 dnf config-manager --set-enabled crb
 
@@ -128,22 +157,26 @@ else
   echo "    -> rpmfusion-free-release package is already installed."
 fi
 
+if ! rpm -q rpmfusion-nonfree-release &> /dev/null; then
+  dnf install -y --nogpgcheck \
+    https://mirrors.rpmfusion.org/nonfree/el/rpmfusion-nonfree-release-9.noarch.rpm || true
+else
+  echo "    -> rpmfusion-nonfree-release package is already installed."
+fi
+
 dnf update -y
 
-echo "==> [2/8] Installing/Verifying Xorg server, 'nouveau' GPU driver, X11 tools, and SDDM..."
+echo "==> [2/8] Installing Base Xorg server, X11 tools, SDDM, and Selected GPU Driver ($GPU_DESC)..."
 dnf install -y --skip-broken \
   pciutils \
   linux-firmware \
   xorg-x11-server-Xorg \
   xorg-x11-xinit \
   xorg-x11-xauth \
-  xorg-x11-drv-nouveau \
   xorg-x11-drv-libinput \
   xorg-x11-drv-evdev \
   xorg-x11-drv-vesa \
   xorg-x11-drv-fbdev \
-  xorg-x11-drv-vmware \
-  xorg-x11-drv-qxl \
   setxkbmap \
   xrdb \
   xsetroot \
@@ -166,14 +199,41 @@ dnf install -y --skip-broken \
   dbus-x11 \
   polkit
 
-# Ensure 'nouveau' kernel module is not blacklisted and loads automatically
-rm -f /etc/modprobe.d/*blacklist*nouveau*.conf
-echo "nouveau" > /etc/modules-load.d/nouveau.conf
-modprobe nouveau || true
-
-# Configure Xorg to bind KMS 'nouveau' cleanly with Glamor acceleration
 mkdir -p /etc/X11/xorg.conf.d
-cat << 'EOF' > /etc/X11/xorg.conf.d/20-nouveau.conf
+rm -f /etc/X11/xorg.conf.d/20-gpu-driver.conf /etc/X11/xorg.conf.d/20-nouveau.conf
+
+# Helper function to ensure 'nouveau' is unblacklisted when switching back to open-source drivers
+enable_opensource_kms() {
+  if rpm -qa | grep -qE "nvidia-driver|akmod-nvidia|kmod-nvidia"; then
+    echo "    -> Removing conflicting proprietary NVIDIA packages..."
+    dnf remove -y "*nvidia*" || true
+    dnf module reset -y nvidia-driver 2>/dev/null || true
+  fi
+  rm -f /etc/modprobe.d/*blacklist*nouveau*.conf /etc/X11/xorg.conf.d/*nvidia*.conf /etc/X11/xorg.conf
+  if [ -f /etc/default/grub ] && grep -q "nouveau" /etc/default/grub; then
+    sed -i -E 's/rd\.driver\.blacklist=nouveau//g; s/modprobe\.blacklist=nouveau//g; s/nvidia-drm\.modeset=1//g' /etc/default/grub
+    grub2-mkconfig -o /boot/grub2/grub.cfg 2>/dev/null || true
+  fi
+}
+
+# Helper function to prepare system for proprietary NVIDIA drivers (headers + blacklist nouveau)
+prepare_proprietary_nvidia() {
+  echo "    -> Installing kernel headers and build dependencies for NVIDIA driver..."
+  dnf install -y --skip-broken kernel-devel kernel-headers gcc make dkms acpid libglvnd-devel pkgconfig
+  rm -f /etc/modules-load.d/nouveau.conf
+  cat << 'EOF' > /etc/modprobe.d/blacklist-nouveau.conf
+blacklist nouveau
+options nouveau modeset=0
+EOF
+}
+
+case "$GPU_PROFILE" in
+  nouveau)
+    enable_opensource_kms
+    dnf install -y --skip-broken xorg-x11-drv-nouveau
+    echo "nouveau" > /etc/modules-load.d/nouveau.conf
+    modprobe nouveau 2>/dev/null || true
+    cat << 'EOF' > /etc/X11/xorg.conf.d/20-gpu-driver.conf
 Section "OutputClass"
     Identifier "Nvidia Nouveau KMS"
     MatchDriver "nouveau"
@@ -181,6 +241,69 @@ Section "OutputClass"
     Option "AccelMethod" "glamor"
 EndSection
 EOF
+    ;;
+
+  nvidia-latest)
+    prepare_proprietary_nvidia
+    dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/cuda-rhel9.repo 2>/dev/null || true
+    dnf module reset -y nvidia-driver 2>/dev/null || true
+    if ! dnf module install -y nvidia-driver:latest-dkms; then
+      echo "    -> Falling back to RPM Fusion akmod-nvidia (latest)..."
+      dnf install -y --skip-broken akmod-nvidia xorg-x11-drv-nvidia xorg-x11-drv-nvidia-libs
+    fi
+    ;;
+
+  nvidia-550)
+    prepare_proprietary_nvidia
+    dnf config-manager --add-repo https://developer.download.nvidia.com/compute/cuda/repos/rhel9/x86_64/cuda-rhel9.repo 2>/dev/null || true
+    dnf module reset -y nvidia-driver 2>/dev/null || true
+    if ! dnf module install -y nvidia-driver:550-dkms; then
+      echo "    -> Stream 550-dkms not found, falling back to available NVIDIA driver..."
+      dnf install -y --skip-broken akmod-nvidia xorg-x11-drv-nvidia
+    fi
+    ;;
+
+  nvidia-470)
+    prepare_proprietary_nvidia
+    dnf module reset -y nvidia-driver 2>/dev/null || true
+    dnf install -y --skip-broken akmod-nvidia-470xx xorg-x11-drv-nvidia-470xx xorg-x11-drv-nvidia-470xx-libs
+    ;;
+
+  amd)
+    enable_opensource_kms
+    dnf install -y --skip-broken xorg-x11-drv-amdgpu xorg-x11-drv-ati linux-firmware
+    modprobe amdgpu 2>/dev/null || true
+    cat << 'EOF' > /etc/X11/xorg.conf.d/20-gpu-driver.conf
+Section "OutputClass"
+    Identifier "AMD KMS"
+    MatchDriver "amdgpu"
+    Driver "amdgpu"
+    Option "DRI" "3"
+    Option "TearFree" "true"
+EndSection
+EOF
+    ;;
+
+  intel)
+    enable_opensource_kms
+    dnf install -y --skip-broken xorg-x11-drv-intel intel-media-driver libva-intel-driver
+    modprobe i915 2>/dev/null || true
+    cat << 'EOF' > /etc/X11/xorg.conf.d/20-gpu-driver.conf
+Section "OutputClass"
+    Identifier "Intel KMS"
+    MatchDriver "i915"
+    Driver "modesetting"
+    Option "AccelMethod" "glamor"
+    Option "DRI" "3"
+EndSection
+EOF
+    ;;
+
+  vm)
+    enable_opensource_kms
+    dnf install -y --skip-broken xorg-x11-drv-vmware xorg-x11-drv-qxl xorg-x11-drv-vesa xorg-x11-drv-fbdev
+    ;;
+esac
 
 echo "==> [3/8] Configuring System Locale and Keyboard Layouts (Console, X11 & Shells)..."
 dnf install -y "$LANGPACK" glibc-langpack-en
@@ -469,9 +592,10 @@ systemctl set-default graphical.target
 
 echo "================================================================================"
 echo " Setup & Verification completed successfully!"
+echo "   - Detected GPU      : $DETECTED_GPU"
+echo "   - Selected Driver   : $GPU_DESC"
 echo "   - System Language   : $SYS_LOCALE"
 echo "   - X11 & Shell KB    : $X11_LAYOUT ${X11_VARIANT:+($X11_VARIANT)}"
-echo "   - GPU Driver        : nouveau (KMS / modesetting)"
 echo "   - SDDM Theme        : maldives (with custom SGI splash)"
 echo "   - Installed Suite   : LibreOffice, Firefox, Thunderbird, VLC, Evince (pdfview)"
 echo "   - MaXX Reinstalled  : $REINSTALL_MAXX"
