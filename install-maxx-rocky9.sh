@@ -32,7 +32,7 @@ if ! whiptail --backtitle "MaXX Interactive Desktop Setup - Rocky Linux 9" \
   --title "DISCLAIMER & WARNING" \
   --yes-button "Accept" --no-button "Decline" \
   --yesno "This idempotent script will configure or update this Rocky Linux 9 system:\n\n\
-  1. Configure system locale and keyboard layouts (Console, SDDM, X11, Shells).\n\
+  1. Configure system locale and keyboard layouts (+ Ctrl-Alt-Backspace X11 reset).\n\
   2. Select and configure GPU driver (Detected: $DETECTED_GPU).\n\
   3. Enable CRB, EPEL, and RPM Fusion repositories.\n\
   4. Install Xorg server, GPU drivers, and SDDM display manager.\n\
@@ -94,9 +94,9 @@ case "$KB_CHOICE" in
 esac
 
 if [ -n "$X11_VARIANT" ]; then
-  XKB_CMD="/usr/bin/setxkbmap -model pc105 -layout $X11_LAYOUT -variant $X11_VARIANT"
+  XKB_CMD="/usr/bin/setxkbmap -model pc105 -layout $X11_LAYOUT -variant $X11_VARIANT -option terminate:ctrl_alt_bksp"
 else
-  XKB_CMD="/usr/bin/setxkbmap -model pc105 -layout $X11_LAYOUT"
+  XKB_CMD="/usr/bin/setxkbmap -model pc105 -layout $X11_LAYOUT -option terminate:ctrl_alt_bksp"
 fi
 
 # 6. Interactive Menu: Graphics Card (GPU) Driver Selection
@@ -197,6 +197,14 @@ dnf install -y --skip-broken \
   polkit
 
 mkdir -p /etc/X11/xorg.conf.d
+
+# Enable Ctrl-Alt-Backspace X11 server reset (DontZap = false)
+cat << 'EOF' > /etc/X11/xorg.conf.d/10-zap.conf
+Section "ServerFlags"
+    Option "DontZap" "false"
+EndSection
+EOF
+
 rm -f /etc/X11/xorg.conf.d/20-nouveau.conf /etc/X11/xorg.conf.d/20-gpu-driver.conf
 
 case "$GPU_PROFILE" in
@@ -257,7 +265,7 @@ EOF
     ;;
 esac
 
-echo "==> [3/8] Configuring System Locale and Keyboard Layouts..."
+echo "==> [3/8] Configuring System Locale, Keyboard Layouts & Ctrl-Alt-Backspace..."
 dnf install -y "$LANGPACK" glibc-langpack-en
 
 # Remove any previous custom SDDM service overrides that could interfere with sddm-greeter
@@ -276,15 +284,16 @@ else
   localectl set-x11-keymap us pc105
 fi
 
+# Apply selected X11 layout + 'terminate:ctrl_alt_bksp' option via localectl
 if [ -n "$X11_VARIANT" ]; then
-  localectl set-x11-keymap "$X11_LAYOUT" pc105 "$X11_VARIANT"
+  localectl set-x11-keymap "$X11_LAYOUT" pc105 "$X11_VARIANT" terminate:ctrl_alt_bksp
 else
-  localectl set-x11-keymap "$X11_LAYOUT" pc105
+  localectl set-x11-keymap "$X11_LAYOUT" pc105 "" terminate:ctrl_alt_bksp
 fi
 
-# Ensure all X11 terminals (xterm, Unix Shell, Admin Shell) enforce the chosen keyboard layout
+# Ensure all X11 terminals (xterm, Unix Shell, Admin Shell) enforce the chosen keyboard layout & Zap key
 cat << EOF > /etc/profile.d/99-maxx-keyboard.sh
-# Apply selected X11 keyboard layout in graphical shells (xterm, Unix Shell, Admin Shell)
+# Apply selected X11 keyboard layout and Ctrl-Alt-Backspace in graphical shells
 if [ -n "\${DISPLAY:-}" ] && [ -x /usr/bin/setxkbmap ]; then
   $XKB_CMD >/dev/null 2>&1 || true
 fi
@@ -293,7 +302,7 @@ chmod 644 /etc/profile.d/99-maxx-keyboard.sh
 
 echo "    -> Locale set to: $SYS_LOCALE"
 echo "    -> Console keymap set to: $VC_KEYMAP"
-echo "    -> X11 & SDDM layout set to: $X11_LAYOUT ${X11_VARIANT:+(variant: $X11_VARIANT)}"
+echo "    -> X11 & SDDM layout set to: $X11_LAYOUT ${X11_VARIANT:+(variant: $X11_VARIANT)} (Ctrl+Alt+Backspace enabled)"
 
 echo "==> [4/8] Installing MaXX dependencies, Icon Themes, and Desktop Applications..."
 dnf install -y --skip-broken \
@@ -557,7 +566,7 @@ echo " Setup & Verification completed successfully!"
 echo "   - Detected GPU      : $DETECTED_GPU"
 echo "   - Selected Driver   : $GPU_DESC"
 echo "   - System Language   : $SYS_LOCALE"
-echo "   - SDDM/X11/Shell KB : $X11_LAYOUT ${X11_VARIANT:+($X11_VARIANT)}"
+echo "   - SDDM/X11/Shell KB : $X11_LAYOUT ${X11_VARIANT:+($X11_VARIANT)} (+ Ctrl-Alt-Backspace)"
 echo "   - SDDM Theme        : maldives (with custom SGI splash)"
 echo "   - Installed Suite   : LibreOffice, Firefox, Thunderbird, VLC, Evince (pdfview)"
 echo "   - MaXX Reinstalled  : $REINSTALL_MAXX"
