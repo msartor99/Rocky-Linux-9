@@ -2,6 +2,7 @@
 # ==============================================================================
 # Post-Installation Script: X11 + SDDM + MaXX Interactive Desktop (Octane)
 # Target OS: Rocky Linux 9 (Minimal Install / Server without GUI)
+# GPU Driver: Open-source 'nouveau' (KMS / Glamor) & standard X11 drivers
 # Design: Strictly Idempotent (safe to run multiple times)
 # ==============================================================================
 
@@ -26,10 +27,10 @@ if ! whiptail --backtitle "MaXX Interactive Desktop Setup - Rocky Linux 9" \
   --yesno "This idempotent script will configure or update this Rocky Linux 9 system:\n\n\
   1. Configure system locale and console/X11 keyboard layouts.\n\
   2. Enable CRB and EPEL repositories and update packages.\n\
-  3. Install Xorg server, Mesa drivers, and SDDM display manager.\n\
+  3. Install Xorg server, 'nouveau' GPU driver, and SDDM display manager.\n\
   4. Install Motif/X11 compatibility libraries and required fonts.\n\
   5. Install or verify MaXX Interactive Desktop in /opt/MaXX.\n\
-  6. Configure custom SGI splash screen and desktop wallpaper.\n\
+  6. Configure custom SGI splash screen (Maldives theme) and desktop wallpaper.\n\
   7. Ensure default systemd target is 'graphical.target'.\n\n\
 WARNING: This script is provided 'AS IS' without warranty of any kind. Ensure you have a backup or snapshot before proceeding.\n\n\
 Do you accept these terms and wish to proceed?" 22 78; then
@@ -108,23 +109,54 @@ dnf config-manager --set-enabled crb
 if ! rpm -q epel-release &> /dev/null; then
   dnf install -y epel-release
 else
-  echo "    -> EPEL repository is already installed."
+  echo "    -> epel-release package is already installed."
 fi
 
+dnf config-manager --set-enabled epel || true
 dnf update -y
 
-echo "==> [2/8] Installing/Verifying Xorg server, drivers, and SDDM..."
-dnf install -y \
+echo "==> [2/8] Installing/Verifying Xorg server, 'nouveau' GPU driver, and SDDM..."
+dnf install -y --skip-broken \
+  pciutils \
+  linux-firmware \
   xorg-x11-server-Xorg \
   xorg-x11-xinit \
   xorg-x11-xauth \
+  xorg-x11-drv-nouveau \
   xorg-x11-drv-libinput \
+  xorg-x11-drv-evdev \
+  xorg-x11-drv-vesa \
+  xorg-x11-drv-fbdev \
+  xorg-x11-drv-vmware \
+  xorg-x11-drv-qxl \
   mesa-dri-drivers \
   mesa-vulkan-drivers \
+  mesa-libGL \
+  mesa-libEGL \
+  mesa-libGLU \
+  libglvnd-glx \
+  libglvnd-egl \
+  libglvnd-opengl \
   sddm \
   sddm-themes \
   dbus-x11 \
   polkit
+
+# Ensure 'nouveau' kernel module is not blacklisted and loads automatically
+rm -f /etc/modprobe.d/*blacklist*nouveau*.conf
+echo "nouveau" > /etc/modules-load.d/nouveau.conf
+modprobe nouveau || true
+
+# Configure Xorg to bind KMS 'nouveau' cleanly with Glamor acceleration
+mkdir -p /etc/X11/xorg.conf.d
+cat << 'EOF' > /etc/X11/xorg.conf.d/20-nouveau.conf
+Section "OutputClass"
+    Identifier "Nvidia Nouveau KMS"
+    MatchDriver "nouveau"
+    Driver "modesetting"
+    Option "AccelMethod" "glamor"
+EndSection
+EOF
 
 echo "==> [3/8] Configuring System Locale and Keyboard Layouts (Console & X11)..."
 dnf install -y "$LANGPACK"
@@ -142,7 +174,7 @@ echo "    -> Console keymap set to: $VC_KEYMAP"
 echo "    -> X11 layout set to: $X11_LAYOUT ${X11_VARIANT:+(variant: $X11_VARIANT)}"
 
 echo "==> [4/8] Installing/Verifying MaXX Desktop dependencies and utilities..."
-dnf install -y \
+dnf install -y --skip-broken \
   wget \
   tar \
   bzip2 \
@@ -164,11 +196,8 @@ dnf install -y \
   gtk3 \
   ImageMagick
 
-# Install X11 root window background setter (xloadimage provides 'xsetbg' in EPEL 9)
-dnf install -y xloadimage || echo "    -> Info: xloadimage not found, using ImageMagick 'display' as fallback."
-
 echo "==> [5/8] Installing/Verifying X11 (Bitmap/ISO8859-1) and TrueType fonts..."
-dnf install -y \
+dnf install -y --skip-broken \
   xorg-x11-fonts-misc \
   xorg-x11-fonts-75dpi \
   xorg-x11-fonts-ISO8859-1-75dpi \
@@ -177,17 +206,13 @@ dnf install -y \
   dejavu-sans-mono-fonts \
   google-noto-fonts-common \
   google-noto-sans-fonts \
-  google-noto-mono-fonts \
-  google-noto-sans-ui-fonts
-
-dnf install -y bitmap-fonts-compat || echo "    -> Info: bitmap-fonts-compat skipped (not found in repository)."
+  google-noto-sans-mono-fonts
 
 echo "==> [6/8] Processing MaXX Interactive Desktop installation..."
 MAXX_URL="https://s3.ca-central-1.amazonaws.com/cdn.maxxinteractive.com/maxx-desktop-installer/MaXX-Desktop-LINUX-x86_64-2.2.0-Installer.sh"
 INSTALLER="/tmp/MaXX-Desktop-LINUX-x86_64-2.2.0-Installer.sh"
 
 if [ "$REINSTALL_MAXX" = "yes" ]; then
-  # Keep at most ONE backup directory (/opt/MaXX.bak) to prevent disk space exhaustion
   if [ -d "/opt/MaXX" ]; then
     echo "    -> Rotating existing /opt/MaXX to /opt/MaXX.bak..."
     rm -rf /opt/MaXX.bak
@@ -195,7 +220,6 @@ if [ "$REINSTALL_MAXX" = "yes" ]; then
     rm -rf /usr/share/themes/{IndigoMagic,Rio,Gotham,MaXX*}
   fi
 
-  # Download installer only if not already cached in /tmp
   if [ ! -s "$INSTALLER" ]; then
     echo "    -> Downloading MaXX Desktop installer..."
     wget -q --show-progress -O "$INSTALLER" "$MAXX_URL"
@@ -209,7 +233,7 @@ else
   echo "    -> Skipping MaXX reinstallation (preserving existing /opt/MaXX)."
 fi
 
-echo "==> [7/8] Configuring SGI Splash Screen and Desktop Wallpaper..."
+echo "==> [7/8] Configuring SGI Splash Screen (Maldives theme) and Desktop Wallpaper..."
 SPLASH_URL="https://raw.githubusercontent.com/msartor99/FreeBSD15-Maxxdesktop/main/SGI_splash.jpg"
 WALLPAPER_URL="https://raw.githubusercontent.com/msartor99/FreeBSD15-Maxxdesktop/main/sgi_desktop.jpg"
 SPLASH_DEST="/usr/share/backgrounds/sgi/SGI_splash.jpg"
@@ -230,11 +254,24 @@ else
   echo "    -> sgi_desktop.jpg already present, skipping download."
 fi
 
-cp -f "$SPLASH_DEST" /opt/MaXX/share/backgrounds/SGI_splash.jpg
-cp -f "$WALLPAPER_DEST" /opt/MaXX/share/backgrounds/sgi_desktop.jpg
+if [ ! "$SPLASH_DEST" -ef /opt/MaXX/share/backgrounds/SGI_splash.jpg ]; then
+  cp -f "$SPLASH_DEST" /opt/MaXX/share/backgrounds/SGI_splash.jpg
+fi
+if [ ! "$WALLPAPER_DEST" -ef /opt/MaXX/share/backgrounds/sgi_desktop.jpg ]; then
+  cp -f "$WALLPAPER_DEST" /opt/MaXX/share/backgrounds/sgi_desktop.jpg
+fi
 chmod 644 /usr/share/backgrounds/sgi/*.jpg /opt/MaXX/share/backgrounds/*.jpg
 
-# Idempotently overwrite SDDM user theme overrides
+# Configure SDDM to strictly use X11, 'maldives' theme, and custom SGI splash background
+mkdir -p /etc/sddm.conf.d
+cat << 'EOF' > /etc/sddm.conf.d/10-sgi-theme.conf
+[General]
+DisplayServer=x11
+
+[Theme]
+Current=maldives
+EOF
+
 for THEME_DIR in /usr/share/sddm/themes/*; do
   if [ -d "$THEME_DIR" ]; then
     cat << EOF > "$THEME_DIR/theme.conf.user"
@@ -245,18 +282,16 @@ EOF
   fi
 done
 
-# Idempotently write X11 wallpaper autoload script (supports xsetbg, feh, or ImageMagick display)
+# Idempotently write X11 wallpaper autoload script
 mkdir -p /etc/X11/xinit/xinitrc.d
 cat << 'EOF' > /etc/X11/xinit/xinitrc.d/99-sgi-wallpaper.sh
 #!/bin/sh
 WALLPAPER="/usr/share/backgrounds/sgi/sgi_desktop.jpg"
 if [ -f "$WALLPAPER" ]; then
-  if command -v xsetbg >/dev/null 2>&1; then
-    xsetbg -fullscreen "$WALLPAPER" &
-  elif command -v feh >/dev/null 2>&1; then
-    feh --bg-scale "$WALLPAPER" &
-  elif command -v display >/dev/null 2>&1; then
+  if command -v display >/dev/null 2>&1; then
     display -window root -backdrop "$WALLPAPER" &
+  elif [ -x "/opt/MaXX/bin/xsetbg" ]; then
+    /opt/MaXX/bin/xsetbg -fullscreen "$WALLPAPER" &
   fi
 fi
 EOF
@@ -264,27 +299,19 @@ chmod +x /etc/X11/xinit/xinitrc.d/99-sgi-wallpaper.sh
 
 echo "==> [8/8] Verifying SDDM and graphical boot target..."
 mkdir -p /usr/share/xsessions
-if [ -f /opt/MaXX/share/xsessions/maxx.desktop ]; then
-  cp -f /opt/MaXX/share/xsessions/maxx.desktop /usr/share/xsessions/maxx.desktop
+if [ -f /opt/MaXX/share/xsessions/maxx.desktop ] && [ ! -e /usr/share/xsessions/maxx.desktop ]; then
+  ln -sf /opt/MaXX/share/xsessions/maxx.desktop /usr/share/xsessions/maxx.desktop
 fi
 
-if ! systemctl is-enabled sddm &> /dev/null; then
-  systemctl enable sddm --force
-else
-  echo "    -> SDDM service is already enabled."
-fi
-
-CURRENT_TARGET=$(systemctl get-default)
-if [ "$CURRENT_TARGET" != "graphical.target" ]; then
-  systemctl set-default graphical.target
-else
-  echo "    -> Default target is already set to graphical.target."
-fi
+systemctl enable sddm.service --force
+systemctl set-default graphical.target
 
 echo "================================================================================"
 echo " Setup & Verification completed successfully!"
 echo "   - System Language   : $SYS_LOCALE"
 echo "   - X11 Keyboard      : $X11_LAYOUT ${X11_VARIANT:+($X11_VARIANT)}"
+echo "   - GPU Driver        : nouveau (KMS / modesetting)"
+echo "   - SDDM Theme        : maldives (with custom SGI splash)"
 echo "   - MaXX Reinstalled  : $REINSTALL_MAXX"
 echo "   - Splash Screen     : $SPLASH_DEST"
 echo "   - Desktop Wallpaper : $WALLPAPER_DEST"
