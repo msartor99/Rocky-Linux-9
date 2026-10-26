@@ -356,8 +356,12 @@ dnf install -y --skip-broken \
   libXt \
   libXext \
   libXft \
+  libXScrnSaver \
   gtk2 \
+  gtk2-engines \
   gtk3 \
+  libcanberra-gtk2 \
+  libcanberra-gtk3 \
   gdk-pixbuf2 \
   gdk-pixbuf2-modules \
   librsvg2 \
@@ -436,13 +440,24 @@ else
   echo "    -> Skipping MaXX reinstallation (preserving existing /opt/MaXX)."
 fi
 
-# Fix 1: Grant read/execute permissions on MaXX skeleton & ROX MIME-types (prevents red triangle icons)
+# Fix 1: Grant read/execute permissions on MaXX skeleton & ROX MIME-types
 chmod -R a+rX /opt/MaXX/share /opt/MaXX/etc /opt/MaXX/lib* 2>/dev/null || true
 if [ -d "/opt/MaXX/share/misc/HOME/rox.sourceforge.net/MIME-types" ]; then
   chmod -R a+rx /opt/MaXX/share/misc/HOME/rox.sourceforge.net/MIME-types
 fi
 
-# Fix 2: Clean stale /tmp/MaXXisRunning-$USER lock files and enforce keyboard on MaXX session startup
+# Fix 2: Patch MaXX's initMaXX-Desktop-Home.sh so 'mkdir -p $HOME/.config' is always executed before copying ROX files
+INIT_HOME_SH="/opt/MaXX/share/misc/HOME/initMaXX-Desktop-Home.sh"
+if [ -f "$INIT_HOME_SH" ] && ! grep -q "mkdir -p \$HOME/.config" "$INIT_HOME_SH"; then
+  sed -i '/do_install_rox_files(){/a mkdir -p $HOME/.config' "$INIT_HOME_SH"
+fi
+
+# Fix 3: Remove incompatible GTK3 icon-theme.cache inside /opt/MaXX so GTK2 ROX-Filer loads native SGI Irix icons directly
+rm -f /opt/MaXX/share/icons/*/icon-theme.cache /usr/share/icons/Irix/icon-theme.cache 2>/dev/null || true
+gdk-pixbuf-query-loaders-64 --update-cache 2>/dev/null || true
+update-mime-database /usr/share/mime 2>/dev/null || true
+
+# Fix 4: Clean stale /tmp/MaXXisRunning-$USER lock files and enforce keyboard on MaXX session startup
 rm -f /tmp/MaXXisRunning-* 2>/dev/null || true
 for START_SCRIPT in /opt/MaXX/bin64/startmaxxdesktop /opt/MaXX/bin/startmaxxdesktop; do
   if [ -f "$START_SCRIPT" ]; then
@@ -451,24 +466,10 @@ for START_SCRIPT in /opt/MaXX/bin64/startmaxxdesktop /opt/MaXX/bin/startmaxxdesk
   fi
 done
 
-# Fix 3: Disable hardcoded 'setxkbmap us' inside MaXX desktopenv if present
+# Fix 5: Disable hardcoded 'setxkbmap us' inside MaXX desktopenv if present
 for ENV_SCRIPT in /opt/MaXX/bin64/desktopenv /opt/MaXX/bin/desktopenv; do
   if [ -f "$ENV_SCRIPT" ] && grep -q "setxkbmap" "$ENV_SCRIPT"; then
     sed -i "s#^[[:space:]]*setxkbmap.*#$XKB_CMD >/dev/null 2>\&1 || true#g" "$ENV_SCRIPT"
-  fi
-done
-
-# Fix 4: Update GDK Pixbuf loaders, MIME database, and GTK icon caches
-if [ -d "/opt/MaXX/share/icons" ]; then
-  cp -rn /opt/MaXX/share/icons/* /usr/share/icons/ 2>/dev/null || true
-  chmod -R a+rX /usr/share/icons
-fi
-gdk-pixbuf-query-loaders-64 --update-cache 2>/dev/null || true
-update-mime-database /usr/share/mime 2>/dev/null || true
-
-for ICON_DIR in /usr/share/icons/* /opt/MaXX/share/icons/*; do
-  if [ -d "$ICON_DIR" ]; then
-    gtk-update-icon-cache -f -t "$ICON_DIR" 2>/dev/null || true
   fi
 done
 
@@ -547,7 +548,7 @@ EOF
 chmod +x /usr/local/bin/maxx-background-setter
 
 # Bind 'Background' menu item in Toolchest configuration files to maxx-background-setter
-for TC_FILE in /opt/MaXX/etc/system.toolchestrc /opt/MaXX/share/misc/HOME/.maxxdesktop/toolchestrc /home/*/.maxxdesktop/*toolchest*; do
+for TC_FILE in /opt/MaXX/etc/system.toolchestrc /opt/MaXX/share/misc/HOME/dot.maxxdesktop/toolchestrc /home/*/.maxxdesktop/*toolchest*; do
   if [ -f "$TC_FILE" ]; then
     sed -i -E 's#("Background"[^!]*!)[[:space:]]*.*#\1 "/usr/local/bin/maxx-background-setter"#g' "$TC_FILE" 2>/dev/null || true
   fi
