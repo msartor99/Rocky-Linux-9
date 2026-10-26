@@ -319,16 +319,16 @@ for START_SCRIPT in /opt/MaXX/bin64/startmaxxdesktop /opt/MaXX/bin/startmaxxdesk
   fi
 done
 
-# Fix 3: Override hardcoded 'setxkbmap us' in MaXX desktopenv & user profiles with operator's layout
+# Fix 3: Override hardcoded 'setxkbmap' in MaXX scripts using '#' delimiter to avoid pipe conflicts
 for MAXX_KB_FILE in \
   /opt/MaXX/bin64/desktopenv \
   /opt/MaXX/bin/desktopenv \
   /opt/MaXX/bin64/startmaxxdesktop \
   /opt/MaXX/bin/startmaxxdesktop \
-  /opt/MaXX/share/misc/HOME/.maxxdesktop/* \
-  /home/*/.maxxdesktop/*; do
+  /opt/MaXX/share/misc/HOME/.maxxdesktop/desktopenv \
+  /home/*/.maxxdesktop/desktopenv; do
   if [ -f "$MAXX_KB_FILE" ] && grep -q "setxkbmap" "$MAXX_KB_FILE" 2>/dev/null; then
-    sed -i "s|.*setxkbmap.*|$XKB_CMD 2>/dev/null || true|g" "$MAXX_KB_FILE"
+    sed -i "s#.*setxkbmap.*#$XKB_CMD >/dev/null 2>\&1 || true#g" "$MAXX_KB_FILE"
   fi
 done
 
@@ -410,9 +410,9 @@ RPC_EOF
   for PB in "$HOME"/.config/rox.sourceforge.net/ROX-Filer/pb_*; do
     if [ -f "$PB" ]; then
       if grep -q "<backdrop" "$PB"; then
-        sed -i "s|<backdrop[^>]*>.*</backdrop>|<backdrop style=\"Scaled\">$CHOSEN</backdrop>|" "$PB"
+        sed -i "s#<backdrop[^>]*>.*</backdrop>#<backdrop style=\"Scaled\">$CHOSEN</backdrop>#" "$PB"
       else
-        sed -i "s|<pinboard>|<pinboard>\n  <backdrop style=\"Scaled\">$CHOSEN</backdrop>|" "$PB"
+        sed -i "s#<pinboard>#<pinboard>\n  <backdrop style=\"Scaled\">$CHOSEN</backdrop>#" "$PB"
       fi
     fi
   done
@@ -423,7 +423,7 @@ chmod +x /usr/local/bin/maxx-background-setter
 # Bind 'Background' menu item in Toolchest configuration files to maxx-background-setter
 for TC_FILE in /opt/MaXX/etc/system.toolchestrc /opt/MaXX/share/misc/HOME/.maxxdesktop/toolchestrc /home/*/.maxxdesktop/*toolchest*; do
   if [ -f "$TC_FILE" ]; then
-    sed -i -E 's|("Background"[^!]*!)[[:space:]]*.*|\1 "/usr/local/bin/maxx-background-setter"|g' "$TC_FILE" 2>/dev/null || true
+    sed -i -E 's#("Background"[^!]*!)[[:space:]]*.*#\1 "/usr/local/bin/maxx-background-setter"#g' "$TC_FILE" 2>/dev/null || true
   fi
 done
 
@@ -431,9 +431,9 @@ done
 for PB_FILE in /opt/MaXX/share/misc/HOME/rox.sourceforge.net/ROX-Filer/pb_* /home/*/.config/rox.sourceforge.net/ROX-Filer/pb_*; do
   if [ -f "$PB_FILE" ]; then
     if grep -q "<backdrop" "$PB_FILE"; then
-      sed -i 's|<backdrop[^>]*>.*</backdrop>|<backdrop style="Scaled">/usr/share/backgrounds/sgi/sgi_desktop.jpg</backdrop>|' "$PB_FILE"
+      sed -i 's#<backdrop[^>]*>.*</backdrop>#<backdrop style="Scaled">/usr/share/backgrounds/sgi/sgi_desktop.jpg</backdrop>#' "$PB_FILE"
     else
-      sed -i 's|<pinboard>|<pinboard>\n  <backdrop style="Scaled">/usr/share/backgrounds/sgi/sgi_desktop.jpg</backdrop>|' "$PB_FILE"
+      sed -i 's#<pinboard>#<pinboard>\n  <backdrop style="Scaled">/usr/share/backgrounds/sgi/sgi_desktop.jpg</backdrop>#' "$PB_FILE"
     fi
   fi
 done
