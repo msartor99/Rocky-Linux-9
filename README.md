@@ -39,14 +39,12 @@ An automated, interactive post-installation script designed to transform a fresh
 Since `git` is not installed by default on a Rocky Linux 9 Minimal installation, you can update the base system and fetch the script directly using `curl`:
 
 ```bash
-# 1. Update the system and download the script from GitHub
 sudo dnf update -y
-curl -fsSLO [https://raw.githubusercontent.com/msartor99/Rocky-Linux-9/main/install-maxx-rocky9.sh](https://raw.githubusercontent.com/msartor99/Rocky-Linux-9/main/install-maxx-rocky9.sh)
+curl -fsSL https://raw.githubusercontent.com/msartor99/Rocky-Linux-9/main/install-maxx-rocky9.sh -o install-maxx-rocky9.sh
 
 # 2. Make the script executable and run it
 chmod +x install-maxx-rocky9.sh
-sudo ./install-maxx-rocky9.sh
-```
+sudo ./install-maxx-rocky9.sh```
 
 ### Option 2: Clone the Repository via `git`
 If you prefer updating the base system first and cloning the full repository:
