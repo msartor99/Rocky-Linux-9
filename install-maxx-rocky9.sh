@@ -26,7 +26,8 @@ This script will make significant changes to this Rocky Linux 9 system:
   4. Install Motif/X11 compatibility libraries and required legacy/modern fonts.
   5. Download and execute the official MaXX Interactive Desktop installer
      into /opt/MaXX.
-  6. Change the default systemd target to 'graphical.target'.
+  6. Download and configure custom SGI splash screen and desktop wallpaper.
+  7. Change the default systemd target to 'graphical.target'.
 
 WARNING: This script is provided "AS IS", without warranty of any kind. Ensure
 you have a full backup or a system snapshot before proceeding. The operator
@@ -104,13 +105,13 @@ esac
 clear
 
 # 6. Start installation and system configuration process
-echo "==> [1/7] Enabling CRB and EPEL repositories..."
+echo "==> [1/8] Enabling CRB and EPEL repositories..."
 dnf install -y dnf-plugins-core
 dnf config-manager --set-enabled crb
 dnf install -y epel-release
 dnf update -y
 
-echo "==> [2/7] Installing Xorg server, drivers, and SDDM..."
+echo "==> [2/8] Installing Xorg server, drivers, and SDDM..."
 # Install a standalone X11 server without heavy desktop environments (GNOME/KDE)
 dnf install -y \
   xorg-x11-server-Xorg \
@@ -124,15 +125,11 @@ dnf install -y \
   dbus-x11 \
   polkit
 
-echo "==> [3/7] Configuring System Locale and Keyboard Layouts (Console & X11)..."
-# Install the appropriate language pack so the locale is properly generated
+echo "==> [3/8] Configuring System Locale and Keyboard Layouts (Console & X11)..."
 dnf install -y "$LANGPACK"
 localectl set-locale LANG="$SYS_LOCALE"
-
-# Configure console keymap
 localectl set-keymap "$VC_KEYMAP"
 
-# Configure X11 keymap (creates /etc/X11/xorg.conf.d/00-keyboard.conf)
 if [ -n "$X11_VARIANT" ]; then
   localectl set-x11-keymap "$X11_LAYOUT" pc105 "$X11_VARIANT"
 else
@@ -143,7 +140,7 @@ echo "    -> Locale set to: $SYS_LOCALE"
 echo "    -> Console keymap set to: $VC_KEYMAP"
 echo "    -> X11 layout set to: $X11_LAYOUT ${X11_VARIANT:+(variant: $X11_VARIANT)}"
 
-echo "==> [4/7] Installing MaXX Desktop dependencies and utilities..."
+echo "==> [4/8] Installing MaXX Desktop dependencies and utilities..."
 dnf install -y \
   wget \
   tar \
@@ -155,6 +152,7 @@ dnf install -y \
   alsa-utils \
   xterm \
   xterm-resize \
+  feh \
   motif \
   libXp \
   libXpm \
@@ -165,7 +163,7 @@ dnf install -y \
   gtk2 \
   gtk3
 
-echo "==> [5/7] Installing X11 (Bitmap/ISO8859-1) and TrueType fonts..."
+echo "==> [5/8] Installing X11 (Bitmap/ISO8859-1) and TrueType fonts..."
 dnf install -y \
   xorg-x11-fonts-misc \
   xorg-x11-fonts-75dpi \
@@ -178,14 +176,12 @@ dnf install -y \
   google-noto-mono-fonts \
   google-noto-sans-ui-fonts
 
-# bitmap-fonts-compat may be missing depending on EL9 mirror status
 dnf install -y bitmap-fonts-compat || echo "Info: bitmap-fonts-compat skipped (not found in repository)."
 
-echo "==> [6/7] Downloading and installing MaXX Interactive Desktop..."
+echo "==> [6/8] Downloading and installing MaXX Interactive Desktop..."
 MAXX_URL="https://s3.ca-central-1.amazonaws.com/cdn.maxxinteractive.com/maxx-desktop-installer/MaXX-Desktop-LINUX-x86_64-2.2.0-Installer.sh"
 INSTALLER="/tmp/MaXX-Desktop-LINUX-x86_64-2.2.0-Installer.sh"
 
-# Backup existing installation if present
 if [ -d "/opt/MaXX" ]; then
   BACKUP_DIR="/opt/MaXX-backup-$(date +%s)"
   echo "Previous installation detected: moving to $BACKUP_DIR"
@@ -200,21 +196,57 @@ chmod a+x "$INSTALLER"
 # Run the official MaXX installer
 "$INSTALLER"
 
-echo "==> [7/7] Configuring SDDM and graphical boot target..."
-# Ensure the MaXX XSession desktop entry is registered for SDDM
+echo "==> [7/8] Downloading and configuring SGI Splash Screen and Desktop Wallpaper..."
+SPLASH_URL="https://raw.githubusercontent.com/msartor99/FreeBSD15-Maxxdesktop/main/SGI_splash.jpg"
+WALLPAPER_URL="https://raw.githubusercontent.com/msartor99/FreeBSD15-Maxxdesktop/main/sgi_desktop.jpg"
+
+mkdir -p /usr/share/backgrounds/sgi
+mkdir -p /opt/MaXX/share/backgrounds
+
+wget -q --show-progress -O /usr/share/backgrounds/sgi/SGI_splash.jpg "$SPLASH_URL"
+wget -q --show-progress -O /usr/share/backgrounds/sgi/sgi_desktop.jpg "$WALLPAPER_URL"
+
+# Also copy images to MaXX backgrounds directory for convenience
+cp /usr/share/backgrounds/sgi/SGI_splash.jpg /opt/MaXX/share/backgrounds/
+cp /usr/share/backgrounds/sgi/sgi_desktop.jpg /opt/MaXX/share/backgrounds/
+chmod 644 /usr/share/backgrounds/sgi/*.jpg /opt/MaXX/share/backgrounds/*.jpg
+
+# Configure SDDM theme background to use SGI_splash.jpg
+for THEME_DIR in /usr/share/sddm/themes/*; do
+  if [ -d "$THEME_DIR" ]; then
+    cat << EOF > "$THEME_DIR/theme.conf.user"
+[General]
+background=/usr/share/backgrounds/sgi/SGI_splash.jpg
+type=image
+EOF
+  fi
+done
+
+# Configure automatic desktop wallpaper load on X11 session startup via xinitrc.d
+mkdir -p /etc/X11/xinit/xinitrc.d
+cat << 'EOF' > /etc/X11/xinit/xinitrc.d/99-sgi-wallpaper.sh
+#!/bin/sh
+if command -v feh >/dev/null 2>&1 && [ -f /usr/share/backgrounds/sgi/sgi_desktop.jpg ]; then
+  feh --bg-scale /usr/share/backgrounds/sgi/sgi_desktop.jpg &
+fi
+EOF
+chmod +x /etc/X11/xinit/xinitrc.d/99-sgi-wallpaper.sh
+
+echo "==> [8/8] Configuring SDDM and graphical boot target..."
 mkdir -p /usr/share/xsessions
 if [ ! -f /usr/share/xsessions/maxx.desktop ] && [ -f /opt/MaXX/share/xsessions/maxx.desktop ]; then
   cp /opt/MaXX/share/xsessions/maxx.desktop /usr/share/xsessions/
 fi
 
-# Enable SDDM service and switch default target to graphical
 systemctl enable sddm --force
 systemctl set-default graphical.target
 
 echo "================================================================================"
 echo " Installation completed successfully!"
-echo "   - System Language : $SYS_LOCALE"
-echo "   - X11 Keyboard    : $X11_LAYOUT ${X11_VARIANT:+($X11_VARIANT)}"
+echo "   - System Language   : $SYS_LOCALE"
+echo "   - X11 Keyboard      : $X11_LAYOUT ${X11_VARIANT:+($X11_VARIANT)}"
+echo "   - Splash Screen     : /usr/share/backgrounds/sgi/SGI_splash.jpg"
+echo "   - Desktop Wallpaper : /usr/share/backgrounds/sgi/sgi_desktop.jpg"
 echo ""
 echo " Reboot the system using the command: reboot"
 echo " On the SDDM login screen, select 'MaXX Interactive Desktop' in the Session menu."
