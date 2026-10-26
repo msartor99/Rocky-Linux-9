@@ -19,6 +19,7 @@ An automated, interactive post-installation script designed to transform a fresh
 * **Lightweight X11 Stack:** Installs a standalone Xorg server, Mesa DRI/Vulkan drivers, and the **SDDM** display manager without pulling bloated desktop environments (no GNOME or KDE dependencies).
 * **Complete MaXX Prerequisites:** Automatically enables `CRB` and `EPEL` repositories, installs Motif/X11 compatibility libraries, audio utilities (`pavucontrol`, `alsa-utils`), and legacy ISO8859-1 bitmap/TrueType fonts required by SGI/Motif applications.
 * **Automated MaXX Deployment:** Downloads and executes the official **MaXX Interactive Desktop v2.2.0 (Octane Edition)** installer into `/opt/MaXX` (with automatic backup if a previous installation is detected).
+* **Custom SGI Branding:** Automatically downloads and applies a custom **SGI Splash Screen** (`SGI_splash.jpg`) for SDDM and a classic **SGI Desktop Wallpaper** (`sgi_desktop.jpg`) for the X11 session.
 
 ---
 
@@ -28,7 +29,7 @@ An automated, interactive post-installation script designed to transform a fresh
 * **Memory:** 4 GB RAM minimum (8 GB recommended).
 * **Disk Space:** At least 250 MB free in `/tmp` and 800 MB free in `/opt`.
 * **Privileges:** Root access or a user with `sudo` privileges.
-* **Network:** Active internet connection to fetch packages and the MaXX installer.
+* **Network:** Active internet connection to fetch packages, artwork, and the MaXX installer.
 
 ---
 
@@ -38,12 +39,7 @@ An automated, interactive post-installation script designed to transform a fresh
 Since `git` is not installed by default on a Rocky Linux 9 Minimal installation, you can fetch and execute the script directly using `curl`:
 
 ```bash
-# 1. update Rocky Linux 9
-
-dnf update
-
-# 2. Download the script from GitHub
-
+# 1. Download the script from GitHub
 curl -fsSLO [https://raw.githubusercontent.com/msartor99/Rocky-Linux-9/main/install-maxx-rocky9.sh](https://raw.githubusercontent.com/msartor99/Rocky-Linux-9/main/install-maxx-rocky9.sh)
 
 # 2. Make the script executable and run it
@@ -52,10 +48,11 @@ sudo ./install-maxx-rocky9.sh
 ```
 
 ### Option 2: Clone the Repository via `git`
-If you prefer cloning the full repository:
+If you prefer updating the base system first and cloning the full repository:
 
 ```bash
-# 1. Install git (if not already present) and clone the repository
+# 1. Update the system, install git, and clone the repository
+sudo dnf update -y
 sudo dnf install -y git
 git clone [https://github.com/msartor99/Rocky-Linux-9.git](https://github.com/msartor99/Rocky-Linux-9.git)
 cd Rocky-Linux-9
@@ -78,7 +75,7 @@ sudo ./install-maxx-rocky9.sh
 
 ## 🖥️ Post-Installation & First Login
 
-1. After rebooting, you will be greeted by the **SDDM** graphical login screen.
+1. After rebooting, you will be greeted by the **SDDM** graphical login screen featuring the custom SGI splash background.
 2. In the **Session** drop-down menu, select **MaXX Interactive Desktop**.
 3. Log in using a **standard (non-root) user account**.
 
@@ -94,13 +91,14 @@ sudo ./install-maxx-rocky9.sh
 | Step | Action |
 | :--- | :--- |
 | **Pre-Flight** | Checks `root` privileges, displays disclaimer, installs `dialog`, and prompts for language/keyboard settings. |
-| **[1/7]** | Enables **CRB** (CodeReady Builder) and **EPEL** repositories, then performs a full `dnf update`. |
-| **[2/7]** | Installs `Xorg`, `libinput`, `Mesa` drivers, `SDDM`, `dbus-x11`, and `polkit`. |
-| **[3/7]** | Installs the selected `glibc-langpack` and applies locale & keyboard settings to both Console and X11 via `localectl`. |
-| **[4/7]** | Installs Motif/X11 runtime libraries (`motif`, `libXp`, `libXpm`, `ncurses-compat-libs`, `gtk2`, `gtk3`, `xterm`, etc.). |
-| **[5/7]** | Installs legacy X11 75dpi/100dpi ISO8859-1 bitmap fonts and modern Google Noto / DejaVu TrueType fonts. |
-| **[6/7]** | Backs up any existing `/opt/MaXX` directory, downloads the official MaXX v2.2.0 installer, and runs it. |
-| **[7/7]** | Ensures `maxx.desktop` is registered in `/usr/share/xsessions/`, enables `sddm.service`, and sets `graphical.target` as default. |
+| **[1/8]** | Enables **CRB** (CodeReady Builder) and **EPEL** repositories, then performs a full `dnf update`. |
+| **[2/8]** | Installs `Xorg`, `libinput`, `Mesa` drivers, `SDDM`, `dbus-x11`, and `polkit`. |
+| **[3/8]** | Installs the selected `glibc-langpack` and applies locale & keyboard settings to both Console and X11 via `localectl`. |
+| **[4/8]** | Installs Motif/X11 runtime libraries (`motif`, `libXp`, `libXpm`, `ncurses-compat-libs`, `gtk2`, `gtk3`, `xterm`, `feh`, etc.). |
+| **[5/8]** | Installs legacy X11 75dpi/100dpi ISO8859-1 bitmap fonts and modern Google Noto / DejaVu TrueType fonts. |
+| **[6/8]** | Backs up any existing `/opt/MaXX` directory, downloads the official MaXX v2.2.0 installer, and runs it. |
+| **[7/8]** | Fetches `SGI_splash.jpg` and `sgi_desktop.jpg` into `/usr/share/backgrounds/sgi/` and `/opt/MaXX/share/backgrounds/`, then configures SDDM and X11 wallpaper autoloading. |
+| **[8/8]** | Ensures `maxx.desktop` is registered in `/usr/share/xsessions/`, enables `sddm.service`, and sets `graphical.target` as default. |
 
 ---
 
