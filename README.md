@@ -32,29 +32,39 @@ An automated, interactive post-installation script designed to transform a fresh
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Quick Start (Download & Install)
 
-1. Clone this repository or download the script directly onto your Rocky Linux 9 machine:
-   ```bash
-   curl -O [https://raw.githubusercontent.com/](https://raw.githubusercontent.com/)<YOUR_GITHUB_USERNAME>/<YOUR_REPO_NAME>/main/install-maxx-rocky9.sh
-   ```
+### Option 1: Direct Download via `curl` (Recommended on Minimal Install)
+Since `git` is not installed by default on a Rocky Linux 9 Minimal installation, you can fetch and execute the script directly using `curl`:
 
-2. Make the script executable:
-   ```bash
-   chmod +x install-maxx-rocky9.sh
-   ```
+```bash
+# 1. Download the script from GitHub
+curl -fsSLO [https://raw.githubusercontent.com/msartor99/Rocky-Linux-9/main/install-maxx-rocky9.sh](https://raw.githubusercontent.com/msartor99/Rocky-Linux-9/main/install-maxx-rocky9.sh)
 
-3. Run the script as `root` (or via `sudo`):
-   ```bash
-   sudo ./install-maxx-rocky9.sh
-   ```
+# 2. Make the script executable and run it
+chmod +x install-maxx-rocky9.sh
+sudo ./install-maxx-rocky9.sh
+```
 
-4. Follow the on-screen instructions:
-   * Type `yes` to accept the disclaimer.
-   * Select your preferred **System Language** in the interactive menu.
-   * Select your **Keyboard Layout** in the second menu.
+### Option 2: Clone the Repository via `git`
+If you prefer cloning the full repository:
 
-5. Once the installation finishes, reboot your machine:
+```bash
+# 1. Install git (if not already present) and clone the repository
+sudo dnf install -y git
+git clone [https://github.com/msartor99/Rocky-Linux-9.git](https://github.com/msartor99/Rocky-Linux-9.git)
+cd Rocky-Linux-9
+
+# 2. Make the script executable and run it
+chmod +x install-maxx-rocky9.sh
+sudo ./install-maxx-rocky9.sh
+```
+
+### Interactive Setup Steps
+1. Type `yes` to accept the disclaimer.
+2. Select your preferred **System Language** in the interactive menu.
+3. Select your **Keyboard Layout** in the second menu.
+4. Once the installation finishes, reboot your machine:
    ```bash
    sudo reboot
    ```
