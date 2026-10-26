@@ -41,6 +41,7 @@ Since `git` is not installed by default on a Rocky Linux 9 Minimal installation,
 # 1. update Rocky Linux 9
 
 dnf update
+
 # 2. Download the script from GitHub
 
 curl -fsSLO [https://raw.githubusercontent.com/msartor99/Rocky-Linux-9/main/install-maxx-rocky9.sh](https://raw.githubusercontent.com/msartor99/Rocky-Linux-9/main/install-maxx-rocky9.sh)
